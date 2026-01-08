@@ -149,12 +149,16 @@ func TestGoWaitIntegration(t *testing.T) {
 
 		// 确认所有任务都发送了完成信号
 		completedCount := 0
+		timeout := false
 		for i := 0; i < 5; i++ {
 			select {
 			case <-taskCompleted:
 				completedCount++
 			case <-time.After(time.Second):
 				t.Errorf("等待任务完成超时")
+				timeout = true
+			}
+			if timeout {
 				break
 			}
 		}
