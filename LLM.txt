@@ -1,0 +1,241 @@
+# golib
+
+这是一个 Go 语言通用工具库，提供了日志、并发任务管理、对象池和实用工具函数等功能。
+
+## 项目结构
+
+```
+golib/
+├── logger/          # 日志模块
+│   ├── logger.go    # 日志核心实现
+│   ├── handler.go   # 自定义日志处理器
+│   ├── config.go    # 日志配置
+│   ├── context.go   # 上下文支持
+│   ├── callstack.go # 调用栈追踪
+│   ├── multi.go     # 多日志实例管理
+│   ├── writer/      # 日志写入器
+│   │   ├── async.go           # 异步写入
+│   │   ├── rotate.go          # 日志轮转
+│   │   ├── rotate_producer.go # 轮转生产者
+│   │   └── common.go          # 通用工具
+│   ├── timer/       # 定时器
+│   │   ├── time.go        # 时间工具
+│   │   ├── simple_cron.go # 简单定时任务
+│   │   └── producer.go    # 定时生产者
+│   └── fileclean/   # 文件清理
+│       ├── find.go           # 文件查找
+│       ├── ctime_darwin.go   # macOS 创建时间
+│       ├── ctime_linux.go    # Linux 创建时间
+│       └── ctime_windows.go  # Windows 创建时间
+├── gtask/           # 并发任务管理
+│   ├── gtask.go     # 任务组实现
+│   └── gtask_test.go
+├── pool/            # 对象池
+│   └── bytespool.go # bytes.Buffer 对象池
+└── utils/           # 工具函数
+    ├── map.go           # Map 操作
+    ├── slice.go         # Slice 操作
+    ├── local_cache.go   # 本地缓存
+    ├── concurrent.go    # 并发工具
+    └── *_test.go        # 测试文件
+```
+
+## 核心模块
+
+### 1. logger - 日志模块
+
+高性能、功能丰富的日志库，基于 Go 标准库 `log/slog` 实现。
+
+**主要特性：**
+- 自定义日志格式和处理器
+- 支持日志文件自动轮转（按小时/天）
+- 异步写入，高性能
+- 自动清理过期日志文件
+- 支持 TraceID 追踪
+- 调用栈信息记录
+- 跨平台文件时间获取
+
+**核心类型：**
+- `Config`: 日志配置结构
+  - `FileName`: 日志文件路径
+  - `RotateRule`: 轮转规则（1hour/1day/no）
+  - `MaxFileNum`: 保留文件数量
+  - `BufferSize`: 缓冲队列大小
+  - `WriterTimeout`: 写入超时时间
+  - `FlushDuration`: 刷新间隔
+  - `Level`: 日志级别
+
+- `DefaultHandler`: 自定义日志处理器
+  - 实现 `slog.Handler` 接口
+  - 支持自定义格式输出
+  - 支持属性和分组
+
+**使用示例：**
+```go
+import "github.com/Twelveeee/golib/logger"
+
+// 创建日志实例
+conf := &logger.Config{
+    FileName:      "logs/app.log",
+    RotateRule:    "1hour",
+    MaxFileNum:    48,
+    BufferSize:    4096,
+    FlushDuration: 1000,
+    Level:         slog.LevelInfo,
+}
+
+l, closeFunc, err := logger.NewLogger(ctx, conf)
+if err != nil {
+    panic(err)
+}
+defer closeFunc()
+
+// 使用日志
+l.Info("application started", "version", "1.0.0")
+l.Error("error occurred", "error", err)
+```
+
+### 2. gtask - 并发任务管理
+
+提供并发任务组管理，支持并发控制和错误处理。
+
+**主要特性：**
+- 控制最大并发数
+- 支持部分失败容错
+- 自动 panic 恢复
+- 任务统计（成功/失败计数）
+
+**核心类型：**
+- `Group`: 并发任务组
+  - `Concurrent`: 最大并发数（0 表示不限制）
+  - `AllowSomeFail`: 是否允许部分失败
+
+**使用示例：**
+```go
+import "github.com/Twelveeee/golib/gtask"
+
+g := &gtask.Group{
+    Concurrent:    10,        // 最多 10 个并发
+    AllowSomeFail: true,      // 允许部分失败
+}
+
+// 添加任务
+for i := 0; i < 100; i++ {
+    id := i
+    g.Go(func() error {
+        // 执行任务
+        return doSomething(id)
+    })
+}
+
+// 等待所有任务完成
+successCount, err := g.Wait()
+if err != nil {
+    log.Printf("有任务失败: %v, 成功数: %d", err, successCount)
+}
+```
+
+### 3. pool - 对象池
+
+提供 `bytes.Buffer` 对象池，减少内存分配。
+
+**主要特性：**
+- 基于 `sync.Pool` 实现
+- 自动重置 Buffer
+- 全局共享池 `GlobalBytesPool`
+
+**使用示例：**
+```go
+import "github.com/Twelveeee/golib/pool"
+
+// 获取 Buffer
+buf := pool.GlobalBytesPool.Get()
+defer pool.GlobalBytesPool.Put(buf)
+
+// 使用 Buffer
+buf.WriteString("hello world")
+data := buf.Bytes()
+```
+
+### 4. utils - 工具函数
+
+提供常用的泛型工具函数。
+
+#### 4.1 Slice 操作 (utils/slice.go)
+
+- `ForEach[T any](data []T, f func(T) error) error`: 遍历切片
+- `FindIndex[T any](data []T, f func(T) bool) int`: 查找索引
+- `FindItem[T comparable](data []T, target T) int`: 查找元素
+- `Map[T, K any](data []T, f func(T) K) []K`: 映射转换
+- `Unique[T comparable](data []T) []T`: 去重
+- `InArray[T comparable](target T, data []T) bool`: 判断是否存在
+- `Filter[T any](data []T, f func(T) bool) []T`: 过滤
+- `Chunk[T any](data []T, size int) [][]T`: 分块
+- `Reverse[T any](data []T)`: 反转（原地）
+
+#### 4.2 Map 操作 (utils/map.go)
+
+- `MapByKey[T any, K comparable](base []T, keyFunc func(T) K) map[K]T`: 按键转 Map
+- `MapColumn[T, U any](slice []T, extractor func(T) U) []U`: 提取列
+- `ArrayKeys[K comparable, V any](m map[K]V) []K`: 获取所有键
+- `ArrayValues[K comparable, V any](m map[K]V) []V`: 获取所有值
+
+#### 4.3 本地缓存 (utils/local_cache.go)
+
+- `LocalCache`: 带过期时间的本地缓存
+  - `Get(key string) (interface{}, bool)`: 获取缓存
+  - `Set(key string, data interface{})`: 设置缓存
+  - `Delete(key string)`: 删除缓存
+  - `Clear()`: 清空缓存
+  - `GetOrSet(key string, fn func() (interface{}, error))`: 获取或设置
+- `GenerateCacheKey(v interface{}) (string, error)`: 生成缓存键
+
+**特性：**
+- 基于 `singleflight` 防止缓存击穿
+- 自动过期管理
+- 线程安全
+
+#### 4.4 并发工具 (utils/concurrent.go)
+
+- `SafeGo(fn func())`: 安全启动 goroutine（自动 recover）
+- `CallbackGo(fn func(), callback func())`: 带回调的 goroutine
+- `SetPanicHandler(hd func(info interface{}))`: 设置全局 panic 处理器
+- `OnceErr`: 只设置一次的错误类型
+
+## 依赖
+
+```go
+require (
+    golang.org/x/sync v0.19.0
+)
+```
+
+## Go 版本
+
+要求 Go 1.24.4 或更高版本
+
+## 设计理念
+
+1. **高性能**: 使用对象池、异步写入等技术减少性能开销
+2. **类型安全**: 充分利用 Go 泛型提供类型安全的 API
+3. **易用性**: 提供简洁的 API 和合理的默认值
+4. **可靠性**: 完善的错误处理和 panic 恢复机制
+5. **跨平台**: 支持 macOS、Linux、Windows
+
+## 测试
+
+项目包含完整的单元测试：
+- `gtask/gtask_test.go`: 并发任务测试
+- `utils/map_test.go`: Map 操作测试
+- `utils/slice_test.go`: Slice 操作测试
+- `utils/local_cache_test.go`: 缓存测试
+- `logger/handler_bench_test.go`: 日志性能测试
+
+运行测试：
+```bash
+go test ./...
+```
+
+## 许可证
+
+见 LICENSE 文件
