@@ -24,9 +24,7 @@ func NewLogger(ctx context.Context, conf *Config) (l *slog.Logger, closeFunc fun
 	var closeOnce sync.Once
 	var closeErr error
 
-	var closeWritersFunc func() error
-
-	closeWritersFunc = func() error {
+	closeWritersFunc := func() error {
 		closeOnce.Do(func() {
 			var builder strings.Builder
 			for idx, fn := range closeFns {

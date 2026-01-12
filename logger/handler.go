@@ -103,19 +103,19 @@ func (h *DefaultHandler) appendAttr(buf *bytes.Buffer, attr slog.Attr) {
 	case slog.KindString:
 		buf.WriteString(attr.Value.String())
 	case slog.KindInt64:
-		buf.WriteString(fmt.Sprintf("%d", attr.Value.Int64()))
+		fmt.Fprintf(buf, "%d", attr.Value.Int64())
 	case slog.KindUint64:
-		buf.WriteString(fmt.Sprintf("%d", attr.Value.Uint64()))
+		fmt.Fprintf(buf, "%d", attr.Value.Uint64())
 	case slog.KindFloat64:
-		buf.WriteString(fmt.Sprintf("%g", attr.Value.Float64()))
+		fmt.Fprintf(buf, "%g", attr.Value.Float64())
 	case slog.KindBool:
-		buf.WriteString(fmt.Sprintf("%t", attr.Value.Bool()))
+		fmt.Fprintf(buf, "%t", attr.Value.Bool())
 	case slog.KindDuration:
-		buf.WriteString(attr.Value.Duration().String())
+		fmt.Fprint(buf, attr.Value.Duration())
 	case slog.KindTime:
-		buf.WriteString(attr.Value.Time().Format(time.RFC3339))
+		buf.WriteString(attr.Value.Time().Format(time.DateTime))
 	default:
-		buf.WriteString(fmt.Sprint(attr.Value.Any()))
+		fmt.Fprint(buf, attr.Value.Any())
 	}
 }
 
