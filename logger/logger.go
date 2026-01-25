@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Twelveeee/golib/logger/handler"
 	"github.com/Twelveeee/golib/logger/writer"
 )
 
@@ -46,7 +47,17 @@ func NewLogger(ctx context.Context, conf *Config) (l *slog.Logger, closeFunc fun
 
 	closeFns = append(closeFns, writer.Close)
 
-	l = slog.New(NewDefaultHandler(writer, conf.Level))
+	// 如果是 Debug 级别，同时输出到标准输出
+	var logHandler slog.Handler
+	if conf.Level == slog.LevelDebug {
+		fileHandler := handler.NewDefaultHandler(writer, conf.Level)
+		stdoutHandler := handler.NewStdHandler(os.Stdout, conf.Level)
+		logHandler = handler.NewMultiHandler(fileHandler, stdoutHandler)
+	} else {
+		logHandler = handler.NewDefaultHandler(writer, conf.Level)
+	}
+
+	l = slog.New(logHandler)
 
 	if ctx != nil {
 		go func() {

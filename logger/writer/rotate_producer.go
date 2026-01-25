@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Twelveeee/golib/logger/timer"
+	"github.com/Twelveeee/golib/timer"
 )
 
 // RotateInfo 文件信息

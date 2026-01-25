@@ -1,4 +1,4 @@
-package logger
+package handler
 
 import (
 	"bytes"
@@ -9,11 +9,22 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Twelveeee/golib/constant"
 	"github.com/Twelveeee/golib/pool"
 )
 
-// DefaultHandler 自定义日志格式的 Handler
-type DefaultHandler struct {
+// ANSI 颜色代码
+const (
+	colorReset  = "\033[0m"
+	colorRed    = "\033[31m"
+	colorYellow = "\033[33m"
+	colorBlue   = "\033[34m"
+	colorGray   = "\033[90m"
+	colorCyan   = "\033[36m"
+)
+
+// StdHandler 带颜色输出的 Handler
+type StdHandler struct {
 	w     io.Writer
 	level slog.Level
 	attrs []slog.Attr
@@ -21,40 +32,52 @@ type DefaultHandler struct {
 	mu    sync.Mutex
 }
 
-// NewDefaultHandler 创建自定义格式的 Handler
-func NewDefaultHandler(w io.Writer, level slog.Level) *DefaultHandler {
-	return &DefaultHandler{
+// NewStdHandler 创建带颜色的 Handler
+func NewStdHandler(w io.Writer, level slog.Level) *StdHandler {
+	return &StdHandler{
 		w:     w,
 		level: level,
 	}
 }
 
-func (h *DefaultHandler) Enabled(_ context.Context, level slog.Level) bool {
+func (h *StdHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= h.level
 }
 
-func (h *DefaultHandler) Handle(ctx context.Context, r slog.Record) error {
+func (h *StdHandler) Handle(ctx context.Context, r slog.Record) error {
 	buf := pool.GlobalBytesPool.Get()
 	defer pool.GlobalBytesPool.Put(buf)
 
-	// 添加日志级别
+	// 根据日志级别选择颜色
+	levelColor := h.getLevelColor(r.Level)
+
+	// 添加日志级别(带颜色)
+	buf.WriteString(levelColor)
 	buf.WriteString(r.Level.String())
+	buf.WriteString(colorReset)
 	buf.WriteString(": ")
 
+	// 添加时间(灰色)
+	buf.WriteString(colorGray)
 	t := r.Time.Format("2006-01-02 15:04:05")
 	buf.WriteString(t)
+	buf.WriteString(colorReset)
 	buf.WriteByte(' ')
 
-	// 添加 caller 信息
+	// 添加 caller 信息(青色)
 	if r.PC != 0 {
-		if writeCallerWithSkip(buf, 4) {
+		buf.WriteString(colorCyan)
+		if writeCallerWithSkip(buf, 5) {
+			buf.WriteString(colorReset)
 			buf.WriteByte(' ')
+		} else {
+			buf.WriteString(colorReset)
 		}
 	}
 
 	// 从 context 中提取 traceID
 	if ctx != nil {
-		if traceID, ok := ctx.Value(TraceIDKey).(string); ok && traceID != "" {
+		if traceID, ok := ctx.Value(constant.TraceIDKey).(string); ok && traceID != "" {
 			buf.WriteString("traceID=")
 			buf.WriteString(traceID)
 			buf.WriteByte(' ')
@@ -88,7 +111,22 @@ func (h *DefaultHandler) Handle(ctx context.Context, r slog.Record) error {
 	return err
 }
 
-func (h *DefaultHandler) appendAttr(buf *bytes.Buffer, attr slog.Attr) {
+func (h *StdHandler) getLevelColor(level slog.Level) string {
+	switch level {
+	case slog.LevelDebug:
+		return colorBlue
+	case slog.LevelInfo:
+		return colorCyan
+	case slog.LevelWarn:
+		return colorYellow
+	case slog.LevelError:
+		return colorRed
+	default:
+		return colorReset
+	}
+}
+
+func (h *StdHandler) appendAttr(buf *bytes.Buffer, attr slog.Attr) {
 	// 处理分组
 	if h.group != "" {
 		buf.WriteString(h.group)
@@ -119,12 +157,12 @@ func (h *DefaultHandler) appendAttr(buf *bytes.Buffer, attr slog.Attr) {
 	}
 }
 
-func (h *DefaultHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+func (h *StdHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	newAttrs := make([]slog.Attr, 0, len(h.attrs)+len(attrs))
 	newAttrs = append(newAttrs, h.attrs...)
 	newAttrs = append(newAttrs, attrs...)
 
-	return &DefaultHandler{
+	return &StdHandler{
 		w:     h.w,
 		level: h.level,
 		attrs: newAttrs,
@@ -132,13 +170,13 @@ func (h *DefaultHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	}
 }
 
-func (h *DefaultHandler) WithGroup(name string) slog.Handler {
+func (h *StdHandler) WithGroup(name string) slog.Handler {
 	newGroup := name
 	if h.group != "" {
 		newGroup = h.group + "." + name
 	}
 
-	return &DefaultHandler{
+	return &StdHandler{
 		w:     h.w,
 		level: h.level,
 		attrs: h.attrs,

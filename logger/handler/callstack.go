@@ -1,4 +1,4 @@
-package logger
+package handler
 
 import (
 	"bytes"
@@ -110,7 +110,6 @@ var pathPrefixes = []string{
 }
 
 // CallerPathClean 对caller的文件路径进行精简
-// 原始的是完整的路径，比较长，该方法可以将路径变短
 var CallerPathClean = callerPathClean
 
 func callerPathClean(file string) string {

@@ -1,4 +1,4 @@
-package logger
+package constant
 
 // ContextKey 用于从 context 中提取值的 key 类型
 type ContextKey string
