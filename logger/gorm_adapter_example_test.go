@@ -55,7 +55,7 @@ func ExampleNewGormAdapter_withContext() {
 	if err != nil {
 		panic(err)
 	}
-	defer closeFunc()
+	defer func() { _ = closeFunc() }()
 
 	// 转换为 GORM logger
 	gormLogger := logger.NewGormAdapter(
