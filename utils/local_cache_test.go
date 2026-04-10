@@ -162,6 +162,53 @@ func TestLocalCache_Expiration(t *testing.T) {
 		if result != nil {
 			t.Errorf("缓存值应为 nil，实际为 %v", result)
 		}
+
+		if got := len(cache.items); got != 0 {
+			t.Errorf("访问过期键后应触发惰性删除，缓存数量应为 0，实际为 %d", got)
+		}
+	})
+}
+
+func TestLocalCache_CleanupExpired(t *testing.T) {
+	t.Run("批量清理过期缓存", func(t *testing.T) {
+		cache := NewLocalCache(20 * time.Millisecond)
+		cache.Set("expired-1", "v1")
+		cache.Set("expired-2", "v2")
+		cache.Set("alive", "v3")
+
+		time.Sleep(10 * time.Millisecond)
+		cache.Set("alive", "v3-new")
+		time.Sleep(15 * time.Millisecond)
+
+		removed := cache.CleanupExpired()
+		if removed != 2 {
+			t.Fatalf("清理数量应为 2，实际为 %d", removed)
+		}
+
+		if _, ok := cache.Get("expired-1"); ok {
+			t.Fatal("expired-1 应已被清理")
+		}
+		if _, ok := cache.Get("expired-2"); ok {
+			t.Fatal("expired-2 应已被清理")
+		}
+		if val, ok := cache.Get("alive"); !ok || val != "v3-new" {
+			t.Fatalf("alive 不应被误删，got=(%v,%v)", val, ok)
+		}
+	})
+}
+
+func TestLocalCache_AutoCleanup(t *testing.T) {
+	t.Run("后台定时清理过期缓存", func(t *testing.T) {
+		cache := NewLocalCache(15 * time.Millisecond)
+		cache.StartAutoCleanup(5 * time.Millisecond)
+		defer cache.StopAutoCleanup()
+
+		cache.Set("k1", "v1")
+		time.Sleep(50 * time.Millisecond)
+
+		if _, ok := cache.Get("k1"); ok {
+			t.Fatal("k1 应已被后台清理")
+		}
 	})
 }
 
@@ -285,6 +332,45 @@ func TestLocalCache_ConcurrentAccess(t *testing.T) {
 		}
 
 		wg.Wait()
+	})
+}
+
+func TestLocalCache_ConcurrentGet_ExpiredDelete_NoMisDelete(t *testing.T) {
+	t.Run("并发访问过期键时不出现误删", func(t *testing.T) {
+		cache := NewLocalCache(20 * time.Millisecond)
+		expiredKey := "expired-key"
+		aliveKey := "alive-key"
+		cache.Set(expiredKey, "expired")
+		cache.Set(aliveKey, "alive")
+
+		time.Sleep(30 * time.Millisecond)
+		cache.Set(aliveKey, "alive-new")
+
+		var wg sync.WaitGroup
+		concurrency := 64
+		wg.Add(concurrency * 2)
+
+		for i := 0; i < concurrency; i++ {
+			go func() {
+				defer wg.Done()
+				_, _ = cache.Get(expiredKey)
+			}()
+			go func() {
+				defer wg.Done()
+				val, ok := cache.Get(aliveKey)
+				if !ok || val != "alive-new" {
+					t.Errorf("alive-key 不应被误删，got=(%v,%v)", val, ok)
+				}
+			}()
+		}
+		wg.Wait()
+
+		if _, ok := cache.Get(expiredKey); ok {
+			t.Fatal("expired-key 应已被清理")
+		}
+		if val, ok := cache.Get(aliveKey); !ok || val != "alive-new" {
+			t.Fatalf("alive-key 最终应存在且值正确，got=(%v,%v)", val, ok)
+		}
 	})
 }
 
