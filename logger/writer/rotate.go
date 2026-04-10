@@ -173,6 +173,7 @@ func (f *rotateWriter) onClose(fn func()) {
 
 // checkOpened 检查文件是否打开，若没有打开将打开文件
 // 若当前期望写入的文件名和之前已打开的文件不一致，将先关闭，然后打开新的文件句柄
+// 兼容首次启动时目标日志文件已预先存在（例如程序重启、外部工具预创建日志文件）场景，避免误判
 func (f *rotateWriter) checkOpened(info RotateInfo) (errResult error) {
 	f.mu.Lock()
 	fileExists := f.outFileExists(info.FilePath)
@@ -238,6 +239,9 @@ func (f *rotateWriter) checkSymlink(info RotateInfo) error {
 // outFileExists 判断outFile存在，并且文件Stat没有变化
 func (f *rotateWriter) outFileExists(outFile string) bool {
 	if !exists(outFile) {
+		return false
+	}
+	if f.outFileInfo == nil {
 		return false
 	}
 	info, err := os.Stat(outFile)
