@@ -16,10 +16,15 @@ type CacheItem struct {
 
 // LocalCache 本地缓存结构体
 type LocalCache struct {
-	items  map[string]*CacheItem
-	mutex  sync.RWMutex
+	items map[string]*CacheItem
+	mutex sync.RWMutex
+
 	expire time.Duration // 缓存过期时间
 	group  singleflight.Group
+
+	cleanupStop chan struct{}
+	cleanupDone chan struct{}
+	cleanupMu   sync.Mutex
 }
 
 // NewLocalCache 创建新的本地缓存实例
@@ -33,14 +38,34 @@ func NewLocalCache(expire time.Duration) *LocalCache {
 // Get 从缓存获取数据
 func (lc *LocalCache) Get(key string) (interface{}, bool) {
 	lc.mutex.RLock()
-	defer lc.mutex.RUnlock()
-
-	if item, exists := lc.items[key]; exists {
-		if time.Since(item.Timestamp) < lc.expire {
-			return item.Data, true
-		}
+	item, exists := lc.items[key]
+	if !exists {
+		lc.mutex.RUnlock()
+		return nil, false
 	}
-	return nil, false
+	if time.Since(item.Timestamp) < lc.expire {
+		data := item.Data
+		lc.mutex.RUnlock()
+		return data, true
+	}
+	lc.mutex.RUnlock()
+
+	// 读锁判断过期后，升级写锁并二次校验后删除，避免竞态误删。
+	lc.mutex.Lock()
+	defer lc.mutex.Unlock()
+
+	item, exists = lc.items[key]
+	if !exists {
+		return nil, false
+	}
+	if time.Since(item.Timestamp) >= lc.expire {
+		delete(lc.items, key)
+		return nil, false
+	}
+
+	// 在 RUnlock 与 Lock 之间，可能有其他写入把 key 刷新为最新值；
+	// 因此二次校验若发现未过期，应返回最新数据，而不是误判 miss。
+	return item.Data, true
 }
 
 // Set 设置缓存数据
@@ -68,6 +93,79 @@ func (lc *LocalCache) Clear() {
 	defer lc.mutex.Unlock()
 
 	lc.items = make(map[string]*CacheItem)
+}
+
+// CleanupExpired 批量清理已过期的缓存项，返回清理数量。
+func (lc *LocalCache) CleanupExpired() int {
+	now := time.Now()
+	removed := 0
+
+	lc.mutex.Lock()
+	defer lc.mutex.Unlock()
+
+	for key, item := range lc.items {
+		if now.Sub(item.Timestamp) >= lc.expire {
+			delete(lc.items, key)
+			removed++
+		}
+	}
+
+	return removed
+}
+
+// StartAutoCleanup 启动后台定时清理任务。
+// interval <= 0 时不启动任何清理任务。
+func (lc *LocalCache) StartAutoCleanup(interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+
+	lc.cleanupMu.Lock()
+	defer lc.cleanupMu.Unlock()
+
+	// 已在运行则直接返回
+	if lc.cleanupStop != nil {
+		return
+	}
+
+	stopCh := make(chan struct{})
+	doneCh := make(chan struct{})
+	lc.cleanupStop = stopCh
+	lc.cleanupDone = doneCh
+
+	go func(stop <-chan struct{}, done chan<- struct{}) {
+		ticker := time.NewTicker(interval)
+		defer func() {
+			ticker.Stop()
+			close(done)
+		}()
+
+		for {
+			select {
+			case <-ticker.C:
+				lc.CleanupExpired()
+			case <-stop:
+				return
+			}
+		}
+	}(stopCh, doneCh)
+}
+
+// StopAutoCleanup 停止后台定时清理任务。
+func (lc *LocalCache) StopAutoCleanup() {
+	lc.cleanupMu.Lock()
+	stopCh := lc.cleanupStop
+	doneCh := lc.cleanupDone
+	lc.cleanupStop = nil
+	lc.cleanupDone = nil
+	lc.cleanupMu.Unlock()
+
+	if stopCh == nil {
+		return
+	}
+
+	close(stopCh)
+	<-doneCh
 }
 
 // GetOrSet 从缓存获取数据，如果不存在则执行函数获取并设置缓存

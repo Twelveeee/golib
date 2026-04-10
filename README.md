@@ -214,6 +214,11 @@ func main() {
 }
 ```
 
+> 清理策略说明：
+> - **惰性清理**：`Get()` 访问到过期键时，会在二次校验后删除该键；
+> - **显式批量清理**：可调用 `CleanupExpired()` 一次性扫描并删除所有过期键；
+> - **可选定时清理**：可通过 `StartAutoCleanup(interval)` 启动后台 ticker 周期清理，并在退出前调用 `StopAutoCleanup()` 停止。
+
 #### 并发工具
 
 ```go
