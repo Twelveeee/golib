@@ -15,6 +15,7 @@ import (
 func NewSimpleCron(duration time.Duration) *SimpleCron {
 	sc := &SimpleCron{
 		duration: duration,
+		stopCh:   make(chan struct{}),
 	}
 	_ = sc.start()
 	return sc
@@ -31,7 +32,10 @@ type SimpleCron struct {
 	checkTimeTimer *time.Ticker
 	lastTime       int64
 
-	running bool
+	running   bool
+	stopCh    chan struct{}
+	stopOnce  sync.Once
+	checkerWG sync.WaitGroup
 }
 
 // AddJob 添加任务
@@ -72,9 +76,16 @@ func (sc *SimpleCron) start() error {
 	sc.checkTimeTimer = time.NewTicker(time.Second)
 	sc.lastTime = nowFunc().Unix()
 
+	sc.checkerWG.Add(1)
 	go func() {
-		for range sc.checkTimeTimer.C {
-			sc.checkTimeChange()
+		defer sc.checkerWG.Done()
+		for {
+			select {
+			case <-sc.checkTimeTimer.C:
+				sc.checkTimeChange()
+			case <-sc.stopCh:
+				return
+			}
 		}
 	}()
 	return nil
@@ -106,16 +117,20 @@ func (sc *SimpleCron) checkTimeChange() {
 
 // Stop 停止
 func (sc *SimpleCron) Stop() {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
-	sc.running = false
-	if sc.timer != nil {
-		sc.timer.Stop()
-	}
+	sc.stopOnce.Do(func() {
+		sc.mu.Lock()
+		sc.running = false
+		if sc.timer != nil {
+			sc.timer.Stop()
+		}
+		if sc.checkTimeTimer != nil {
+			sc.checkTimeTimer.Stop()
+		}
+		sc.mu.Unlock()
 
-	if sc.checkTimeTimer != nil {
-		sc.checkTimeTimer.Stop()
-	}
+		close(sc.stopCh)
+		sc.checkerWG.Wait()
+	})
 }
 
 func (sc *SimpleCron) next() time.Duration {
