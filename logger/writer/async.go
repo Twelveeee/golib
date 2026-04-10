@@ -12,6 +12,12 @@ import (
 //	timeout 写超时时间，可以为0，若为0将不超时，阻塞写；若设置为>0的值，当writeTo消费比实际写入多，buf满了将丢弃当前数据
 //	writeTo 实际写入的writer
 func NewAsync(bufSize int, timeout time.Duration, writeTo io.WriteCloser) io.WriteCloser {
+	if bufSize < 0 {
+		// 防御性处理：避免调用方误传负值导致 make(chan, negative) panic。
+		// 这里降级为 0（无缓冲）通道，保持接口兼容。
+		bufSize = 0
+	}
+
 	w := &asyncWriter{
 		msgs:    make(chan []byte, bufSize),
 		timeout: timeout,

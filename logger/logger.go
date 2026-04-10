@@ -93,6 +93,10 @@ func (conf *Config) getWriter() (io.WriteCloser, error) {
 		return nil, errRw
 	}
 
+	if conf.BufferSize < 0 {
+		return w, nil
+	}
+
 	awc := writer.NewAsync(conf.BufferSize, time.Millisecond*time.Duration(conf.WriterTimeout), w)
 	return awc, nil
 }

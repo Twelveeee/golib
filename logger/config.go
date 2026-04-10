@@ -20,8 +20,8 @@ type Config struct {
 	MaxFileNum int `json:"maxFileNum" yaml:"maxFileNum"`
 
 	// 日志内容待写缓冲队列大小
-	// 若<0, 则是同步的
-	// 若为0，则使用默认值4096
+	// 若<0, 则是同步直写（不包异步 writer）
+	// 若为0，则在 SetDefaults 中使用默认值 4096
 	BufferSize int `json:"bufferSize" yaml:"bufferSize"`
 
 	// 日志进入待写队列超时时间，毫秒
@@ -55,6 +55,7 @@ func (c *Config) SetDefaults() {
 		c.MaxFileNum = 48
 	}
 	if c.BufferSize == 0 {
+		// 仅对 0 设置默认值；<0 由 getWriter 解释为同步直写。
 		c.BufferSize = 4096
 	}
 	if c.FlushDuration <= 0 {
