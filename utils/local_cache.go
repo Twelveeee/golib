@@ -70,6 +70,23 @@ func (lc *LocalCache) Clear() {
 	lc.items = make(map[string]*CacheItem)
 }
 
+// CleanupExpired 清理所有已过期的缓存项，并返回清理数量
+func (lc *LocalCache) CleanupExpired() int {
+	lc.mutex.Lock()
+	defer lc.mutex.Unlock()
+
+	now := time.Now()
+	cleaned := 0
+	for key, item := range lc.items {
+		if lc.expire <= 0 || now.Sub(item.Timestamp) >= lc.expire {
+			delete(lc.items, key)
+			cleaned++
+		}
+	}
+
+	return cleaned
+}
+
 // GetOrSet 从缓存获取数据，如果不存在则执行函数获取并设置缓存
 func (lc *LocalCache) GetOrSet(key string, fn func() (interface{}, error)) (interface{}, bool, error) {
 	if data, exists := lc.Get(key); exists {

@@ -135,6 +135,46 @@ func TestLocalCache_Clear(t *testing.T) {
 	})
 }
 
+func TestLocalCache_CleanupExpired(t *testing.T) {
+	t.Run("批量清理过期缓存", func(t *testing.T) {
+		cache := NewLocalCache(50 * time.Millisecond)
+
+		cache.Set("k1", "v1")
+		cache.Set("k2", "v2")
+		cache.Set("k3", "v3")
+
+		cache.mutex.Lock()
+		cache.items["k1"].Timestamp = time.Now().Add(-200 * time.Millisecond)
+		cache.items["k2"].Timestamp = time.Now().Add(-120 * time.Millisecond)
+		cache.mutex.Unlock()
+
+		cleaned := cache.CleanupExpired()
+		if cleaned != 2 {
+			t.Fatalf("应清理 2 条过期缓存，实际为 %d", cleaned)
+		}
+
+		if _, exists := cache.Get("k1"); exists {
+			t.Error("k1 应被清理")
+		}
+		if _, exists := cache.Get("k2"); exists {
+			t.Error("k2 应被清理")
+		}
+		if v, exists := cache.Get("k3"); !exists || v != "v3" {
+			t.Error("k3 不应被清理")
+		}
+	})
+
+	t.Run("无过期缓存时不清理", func(t *testing.T) {
+		cache := NewLocalCache(time.Hour)
+		cache.Set("k1", "v1")
+		cache.Set("k2", "v2")
+
+		if cleaned := cache.CleanupExpired(); cleaned != 0 {
+			t.Fatalf("不应清理缓存，实际清理 %d", cleaned)
+		}
+	})
+}
+
 func TestLocalCache_Expiration(t *testing.T) {
 	t.Run("缓存过期测试", func(t *testing.T) {
 		// 设置很短的过期时间
