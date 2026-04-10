@@ -30,7 +30,7 @@ func NewLogger(ctx context.Context, conf *Config) (l *slog.Logger, closeFunc fun
 			var builder strings.Builder
 			for idx, fn := range closeFns {
 				if e := fn(); e != nil {
-					builder.WriteString(fmt.Sprintf("idx=%d error=%s;", idx, e))
+					_, _ = fmt.Fprintf(&builder, "idx=%d error=%s;", idx, e)
 				}
 			}
 			if builder.Len() > 0 {
